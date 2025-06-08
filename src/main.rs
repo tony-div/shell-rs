@@ -1,8 +1,9 @@
+use std::error::Error;
 use std::ffi::OsStr;
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::env;
 use std::fs;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 fn main() {
     let stdin = io::stdin();
@@ -90,9 +91,21 @@ fn try_not_builtin_command(command: &str, args: &[&str]) {
 }
 
 fn execute_external_program(executable_path: &OsStr, args: &[&str]) {
-    let out = Command::new(executable_path).args(args).output().expect("failed to execute");
-    io::stdout().write_all(&out.stdout).unwrap();
-    io::stderr().write_all(&out.stderr).unwrap();
+    let mut child = Command::new(executable_path).args(args).stdout(Stdio::piped()).spawn().expect("command failed");
+    let mut stdout = child.stdout.take().unwrap();
+
+    let mut buf = [0u8; 100];
+    let mut do_read = || -> Result<usize, Box<dyn Error>> {
+        let read = stdout.read(&mut buf)?;
+
+        print!("{}", std::str::from_utf8(&buf[0..read])?);
+        std::io::stdout().flush()?;
+        Ok(read)
+    };
+
+    while child.try_wait().unwrap().is_none() {
+        do_read().unwrap();
+    }
 }
 
 fn get_paths() -> Vec<String> {
