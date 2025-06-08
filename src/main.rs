@@ -10,6 +10,13 @@ fn main() {
         stdout.flush().unwrap();
         let mut input = String::new();
         stdin.read_line(&mut input).unwrap();
-        println!("{}: command not found", input.split_whitespace().next().unwrap());
+        let mut splitted_line = input.split_whitespace();
+        let command = splitted_line.next().unwrap();
+        if command == "exit" {
+            let state: i32 = splitted_line.next().unwrap().trim().parse().unwrap();
+            std::process::exit(state);
+        } else {
+            println!("{}: command not found", command);
+        }
     }
 }
