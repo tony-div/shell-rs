@@ -1,6 +1,8 @@
+use std::ffi::OsStr;
 use std::io::{self, Write};
 use std::env;
 use std::fs;
+use std::process::Command;
 
 fn main() {
     let stdin = io::stdin();
@@ -13,11 +15,12 @@ fn main() {
         stdin.read_line(&mut input).unwrap();
         let command = input.trim().split(" ").collect::<Vec<&str>>();
         match command.as_slice() {
+            [] => continue,
             [""] => continue,
             ["exit", args @ ..] => exit_cmd(args),
             ["echo", args @ ..] => echo_cmd(args),
             ["type", args @ ..] => type_cmd(args),
-            other => println!("{}: command not found", other[0]),
+            [command, args @ ..] => try_not_builtin_command(command, args),
         }
     }
 }
@@ -61,6 +64,35 @@ fn type_cmd(args: &[&str]) {
         }
     }
     println!("{}: not found", args[0]);
+}
+
+fn try_not_builtin_command(command: &str, args: &[&str]) {
+    
+    let paths = get_paths();
+    for path in paths.iter() {
+        match fs::read_dir(path) {
+            Ok(entries) => {
+                for entry in entries {
+                    let entry = entry.unwrap();
+                    let exec_name = entry.file_name();
+                    if exec_name == command {
+                        execute_external_program(&exec_name, args);
+                        return;
+                    }
+
+                }
+            },
+            Err(_err) => ()
+        }
+    }
+
+    println!("{command}: command not found");
+}
+
+fn execute_external_program(executable_path: &OsStr, args: &[&str]) {
+    let out = Command::new(executable_path).args(args).output().expect("failed to execute");
+    io::stdout().write_all(&out.stdout).unwrap();
+    io::stderr().write_all(&out.stderr).unwrap();
 }
 
 fn get_paths() -> Vec<String> {
