@@ -15,6 +15,15 @@ fn main() {
         if command == "exit" {
             let state: i32 = splitted_line.next().unwrap().trim().parse().unwrap();
             std::process::exit(state);
+        } else if command == "echo" {
+            loop {
+                let next_param = splitted_line.next();
+                if next_param == None {
+                    break;
+                }
+                print!("{} ", next_param.unwrap());
+            }
+            println!("\u{8}");
         } else {
             println!("{}: command not found", command);
         }
