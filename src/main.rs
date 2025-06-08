@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use std::io::{self, Write};
 
 fn main() {
@@ -24,7 +23,22 @@ fn main() {
                 print!("{} ", next_param.unwrap());
             }
             println!("\u{8}");
-        } else {
+        } else if command == "type" {
+            let builtin = ["exit", "echo", "type"];
+            let next_param = splitted_line.next().unwrap();
+            let mut found = false;
+            for builtin_command in builtin {
+                if builtin_command == next_param {
+                    println!("{builtin_command} is a shell builtin");
+                    found = true;
+                    break;
+                }
+            }
+            if found == false {
+                println!("{next_param}: not found");
+            }
+        }
+        else {
             println!("{}: command not found", command);
         }
     }
