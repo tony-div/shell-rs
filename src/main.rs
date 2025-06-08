@@ -21,7 +21,8 @@ fn main() {
 }
 
 fn exit_cmd(args: &[&str]) {
-    std::process::exit(args[0].parse().unwrap())
+    let code = if args.len() < 1 { 1 } else { args[0].parse().unwrap_or(1) };
+    std::process::exit(code);
 }
 
 fn echo_cmd(args: &[&str]) {
