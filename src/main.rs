@@ -42,9 +42,8 @@ fn type_cmd(args: &[&str]) {
             return;
         }
     }
-    let env_paths = env::var("PATH").unwrap_or("$PATH".to_string());
-    let paths = env_paths.split(":").collect::<Vec<&str>>();
-    for path in paths {
+    let paths = get_paths();
+    for path in paths.iter() {
         match fs::read_dir(path) {
             Ok(entries) => {
                 for entry in entries {
@@ -62,4 +61,13 @@ fn type_cmd(args: &[&str]) {
         }
     }
     println!("{}: not found", args[0]);
+}
+
+fn get_paths() -> Vec<String> {
+    let binding = env::var("PATH").unwrap_or("$PATH".to_string());
+    let paths = binding
+        .split(':')
+        .map(|s| s.to_string())
+        .collect::<Vec<String>>();
+    return paths;
 }
