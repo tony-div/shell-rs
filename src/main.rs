@@ -1,4 +1,6 @@
 use std::io::{self, Write};
+use std::env;
+use std::fs;
 
 fn main() {
     let stdin = io::stdin();
@@ -38,6 +40,25 @@ fn type_cmd(args: &[&str]) {
         if builtin_command == args[0] {
             println!("{builtin_command} is a shell builtin");
             return;
+        }
+    }
+    let env_paths = env::var("PATH").unwrap_or("$PATH".to_string());
+    let paths = env_paths.split(":").collect::<Vec<&str>>();
+    for path in paths {
+        match fs::read_dir(path) {
+            Ok(entries) => {
+                for entry in entries {
+                    let entry = entry.unwrap();
+                    let path = entry.path().into_os_string().into_string().unwrap();
+                    let file_name = entry.file_name().into_string().unwrap();
+                    if file_name == args[0] {
+                        println!("{file_name} is {path}");
+                        return;
+                    }
+
+                }
+            },
+            Err(_err) => println!("there was a problem reading directory {} check if the directory exists and rash has valid permissions to read it", path)
         }
     }
     println!("{}: not found", args[0]);
