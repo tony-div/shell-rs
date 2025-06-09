@@ -32,11 +32,12 @@ fn parse_command(input: String) -> Vec<String> {
     let input = input.trim().to_string();
     let mut command = vec![];
     let mut curr = String::new();
-    let mut quoting = false;
+    let mut single_quoting = false;
+    let mut double_quoting = false;
     for char in input.chars() {
         match char {
             ' ' => {
-                if quoting {
+                if single_quoting || double_quoting {
                     curr = curr + " ";
                 } else if curr.len() > 0 {
                     command.push(curr.clone());
@@ -44,12 +45,21 @@ fn parse_command(input: String) -> Vec<String> {
                 }
             },
             '\'' => {
-                if quoting {
-                    quoting = false;
+                if double_quoting {
+                    curr = curr + "'";
+                } else if single_quoting {
+                    single_quoting = false;
                 } else {
-                    quoting = true;
+                    single_quoting = true;
                 }
             },
+            '\"' => {
+                if double_quoting {
+                    double_quoting = false;
+                } else {
+                    double_quoting = true;
+                }
+            }
             other => {
                 curr = curr + &other.to_string();
             }
