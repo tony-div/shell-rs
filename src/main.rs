@@ -47,18 +47,12 @@ fn parse_command(input: String) -> Vec<String> {
             '\'' => {
                 if double_quoting {
                     curr = curr + "'";
-                } else if single_quoting {
-                    single_quoting = false;
                 } else {
-                    single_quoting = true;
+                    single_quoting = !single_quoting;
                 }
             },
             '\"' => {
-                if double_quoting {
-                    double_quoting = false;
-                } else {
-                    double_quoting = true;
-                }
+                double_quoting = !double_quoting;
             }
             other => {
                 curr = curr + &other.to_string();
