@@ -79,9 +79,12 @@ fn cd_cmd(args: &[&str]) {
         println!("cd: too many arguments");
         return;
     }
-    let mut path = args[0].to_string();
+    let mut path;
     if args.len() == 0 {
         path = "~".to_string();
+    }
+    else {
+        path = args[0].to_string();
     }
     if path.starts_with('~') {
         path = path.replace('~', &env::var("HOME").unwrap());
