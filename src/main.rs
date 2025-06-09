@@ -21,6 +21,7 @@ fn main() {
             ["echo", args @ ..] => echo_cmd(args),
             ["type", args @ ..] => type_cmd(args),
             ["pwd"] => pwd_cmd(),
+            ["cd", args @ ..] => cd_cmd(args),
             [command, args @ ..] => try_not_builtin_command(command, args),
         }
     }
@@ -71,6 +72,16 @@ fn pwd_cmd() {
     println!("{}",  env::current_dir()
         .expect("error: maybe the current directory is deleted or you don't have sufficient persmissions")
         .into_os_string().into_string().unwrap());
+}
+
+fn cd_cmd(args: &[&str]) {
+    if args.len() > 1 {
+        println!("cd: too many arguments");
+        return;
+    }
+    if env::set_current_dir(args[0]).is_ok() == false {
+        println!("cd: {}: No such file or directory", args[0])
+    }
 }
 
 fn try_not_builtin_command(command: &str, args: &[&str]) {
