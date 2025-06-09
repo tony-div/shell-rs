@@ -1,6 +1,6 @@
 use std::ffi::OsStr;
 use std::io::{self, stdout, Write};
-use std::env;
+use std::{env};
 use std::fs;
 use std::process::{Command, Stdio};
 
@@ -13,7 +13,8 @@ fn main() {
         stdout.flush().unwrap();
         let mut input = String::new();
         stdin.read_line(&mut input).unwrap();
-        let command = input.trim().split(" ").collect::<Vec<&str>>();
+        let command = parse_command(input);
+        let command: Vec<&str> = command.iter().map(|x| &**x).collect();
         match command.as_slice() {
             [] => continue,
             [""] => continue,
@@ -25,6 +26,39 @@ fn main() {
             [command, args @ ..] => try_not_builtin_command(command, args),
         }
     }
+}
+
+fn parse_command(input: String) -> Vec<String> {
+    let input = input.trim().to_string();
+    let mut command = vec![];
+    let mut curr = String::new();
+    let mut quoting = false;
+    for char in input.chars() {
+        match char {
+            ' ' => {
+                if quoting {
+                    curr = curr + " ";
+                } else if curr.len() > 0 {
+                    command.push(curr.clone());
+                    curr.clear();
+                }
+            },
+            '\'' => {
+                if quoting {
+                    quoting = false;
+                } else {
+                    quoting = true;
+                }
+            },
+            other => {
+                curr = curr + &other.to_string();
+            }
+        }
+    }
+    if curr.len() > 0 {
+        command.push(curr);
+    }
+    return command;
 }
 
 fn exit_cmd(args: &[&str]) {
