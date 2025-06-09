@@ -79,8 +79,16 @@ fn cd_cmd(args: &[&str]) {
         println!("cd: too many arguments");
         return;
     }
-    if env::set_current_dir(args[0]).is_ok() == false {
-        println!("cd: {}: No such file or directory", args[0])
+    let mut path = args[0].to_string();
+    if args.len() == 0 {
+        path = "~".to_string();
+    }
+    if path.starts_with('~') {
+        path = path.replace('~', &env::var("HOME").unwrap());
+
+    }
+    if env::set_current_dir(&path).is_ok() == false {
+        println!("cd: {}: No such file or directory", path);
     }
 }
 
