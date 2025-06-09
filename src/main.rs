@@ -21,6 +21,7 @@ fn main() {
             ["exit", args @ ..] => exit_cmd(args),
             ["echo", args @ ..] => echo_cmd(args),
             ["type", args @ ..] => type_cmd(args),
+            ["pwd"] => pwd_cmd(),
             [command, args @ ..] => try_not_builtin_command(command, args),
         }
     }
@@ -39,7 +40,7 @@ fn echo_cmd(args: &[&str]) {
 }
 
 fn type_cmd(args: &[&str]) {
-    let builtin = ["exit", "echo", "type"];
+    let builtin = ["exit", "echo", "type", "pwd"];
     for builtin_command in builtin {
         if builtin_command == args[0] {
             println!("{builtin_command} is a shell builtin");
@@ -65,6 +66,12 @@ fn type_cmd(args: &[&str]) {
         }
     }
     println!("{}: not found", args[0]);
+}
+
+fn pwd_cmd() {
+    println!("{}",  env::current_dir()
+        .expect("error: maybe the current directory is deleted or you don't have sufficient persmissions")
+        .into_os_string().into_string().unwrap());
 }
 
 fn try_not_builtin_command(command: &str, args: &[&str]) {
