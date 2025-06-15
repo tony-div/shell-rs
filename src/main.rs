@@ -49,17 +49,17 @@ fn parse_command(input: String) -> Vec<String> {
                 }
             },
             '\'' => {
-                if double_quoting {
+                if double_quoting && backlash {
+                    curr = curr + "\\" + "'"
+                } else if double_quoting || backlash {
                     curr = curr + "'";
-                } else if backlash {
-                    curr = curr + "'"
                 } else {
                     single_quoting = !single_quoting;
                 }
                 backlash = false;
             },
             '\"' => {
-                if backlash {
+                if backlash || single_quoting {
                     curr = curr + "\"";
                 } else {
                     double_quoting = !double_quoting;
@@ -67,8 +67,10 @@ fn parse_command(input: String) -> Vec<String> {
                 backlash = false;
             },
             '\\' => {
-                if double_quoting || single_quoting {
+                if (double_quoting && backlash) || single_quoting {
+                    backlash = false;
                     curr = curr + "\\";
+                } else if double_quoting {
                     backlash = true;
                 } else if backlash {
                     backlash = false;
@@ -78,10 +80,16 @@ fn parse_command(input: String) -> Vec<String> {
                 }
             },
             other => {
-                if backlash {
-                    backlash = false;
+                if backlash && double_quoting {
+                    match other {
+                        '\n' => curr = curr + "",
+                        not_special => curr = curr + "\\" + &not_special.to_string()
+                    }    
                 }
-                curr = curr + &other.to_string();
+                else {
+                    curr = curr + &other.to_string();
+                }
+                backlash = false;
             }
         }
     }
