@@ -34,10 +34,14 @@ fn parse_command(input: String) -> Vec<String> {
     let mut curr = String::new();
     let mut single_quoting = false;
     let mut double_quoting = false;
+    let mut backlash = false;
     for char in input.chars() {
         match char {
             ' ' => {
                 if single_quoting || double_quoting {
+                    curr = curr + " ";
+                } else if backlash {
+                    backlash = false;
                     curr = curr + " ";
                 } else if curr.len() > 0 {
                     command.push(curr.clone());
@@ -47,14 +51,40 @@ fn parse_command(input: String) -> Vec<String> {
             '\'' => {
                 if double_quoting {
                     curr = curr + "'";
+                } else if backlash {
+                    backlash = false;
+                    curr = curr + "'"
                 } else {
                     single_quoting = !single_quoting;
                 }
             },
             '\"' => {
-                double_quoting = !double_quoting;
-            }
+                if backlash {
+                    backlash = false;
+                    curr = curr + "\"";
+                } else {
+                    double_quoting = !double_quoting;
+                }
+            },
+            '\\' => {
+                if backlash {
+                    backlash = false;
+                    curr = curr + "\\";
+                } else {
+                    backlash = true;
+                }
+            },
             other => {
+                if backlash {
+                    backlash = false;
+                    match other {
+                        'n' => curr = curr + "\n",
+                        't' => curr = curr + "\t",
+                        '\n' => curr = curr + "\n",
+                        '\\' => curr = curr + "\\",
+                        not_special => curr = curr + &not_special.to_string()
+                    }
+                }
                 curr = curr + &other.to_string();
             }
         }
