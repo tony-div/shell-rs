@@ -52,23 +52,24 @@ fn parse_command(input: String) -> Vec<String> {
                 if double_quoting {
                     curr = curr + "'";
                 } else if backlash {
-                    backlash = false;
                     curr = curr + "'"
                 } else {
                     single_quoting = !single_quoting;
                 }
+                backlash = false;
             },
             '\"' => {
                 if backlash {
-                    backlash = false;
                     curr = curr + "\"";
                 } else {
                     double_quoting = !double_quoting;
                 }
+                backlash = false;
             },
             '\\' => {
                 if double_quoting || single_quoting {
                     curr = curr + "\\";
+                    backlash = true;
                 } else if backlash {
                     backlash = false;
                     curr = curr + "\\";
