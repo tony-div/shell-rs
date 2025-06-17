@@ -1,40 +1,49 @@
 use std::ffi::OsStr;
+use std::fs::{self, File};
 use std::io::{self, stdout, Write};
-use std::{env};
-use std::fs;
-use std::process::{Command, Stdio};
+use std::process::{Command, Output, Stdio};
+use std::{env, str};
 
 fn main() {
     let stdin = io::stdin();
     let mut stdout = io::stdout();
-    
+
     loop {
         print!("$ ");
         stdout.flush().unwrap();
         let mut input = String::new();
         stdin.read_line(&mut input).unwrap();
-        let command = parse_command(input);
+        let (command, stdout_path) = parse_command(input);
         let command: Vec<&str> = command.iter().map(|x| &**x).collect();
+        let out = match resolve_stdout(stdout_path.as_ref()) {
+            Ok(handle) => handle,
+            Err(_) => {
+                println!("{}: {}: No such file or directory", command[0], stdout_path.unwrap_or(String::new()));
+                continue;
+            }
+        };
         match command.as_slice() {
             [] => continue,
             [""] => continue,
             ["exit", args @ ..] => exit_cmd(args),
-            ["echo", args @ ..] => echo_cmd(args),
-            ["type", args @ ..] => type_cmd(args),
-            ["pwd"] => pwd_cmd(),
+            ["echo", args @ ..] => echo_cmd(args, out),
+            ["type", args @ ..] => type_cmd(args, out),
+            ["pwd"] => pwd_cmd(out),
             ["cd", args @ ..] => cd_cmd(args),
-            [command, args @ ..] => try_not_builtin_command(command, args),
+            [command, args @ ..] => try_not_builtin_command(command, args, out),
         }
     }
 }
 
-fn parse_command(input: String) -> Vec<String> {
+fn parse_command(input: String) -> (Vec<String>, Option<String>) {
     let input = input.trim().to_string();
     let mut command = vec![];
     let mut curr = String::new();
     let mut single_quoting = false;
     let mut double_quoting = false;
     let mut backlash = false;
+    let mut reading_stdout_path = false;
+    let mut stdout_path: Option<String> = None;
     for char in input.chars() {
         match char {
             ' ' => {
@@ -79,15 +88,27 @@ fn parse_command(input: String) -> Vec<String> {
                     backlash = true;
                 }
             },
+            '>' => {
+                reading_stdout_path = true;
+                curr.clear();
+            },
             other => {
                 if backlash && double_quoting {
                     match other {
                         '\n' => curr = curr + "",
                         not_special => curr = curr + "\\" + &not_special.to_string()
-                    }    
-                }
-                else {
-                    curr = curr + &other.to_string();
+                    }
+                } else if reading_stdout_path {
+                    match stdout_path {
+                        Some(ref mut path) => {
+                            path.push(other);
+                        },
+                        None => {
+                            stdout_path = Some(String::from(other));
+                        }
+                    }
+                } else {
+                    curr.push(other);
                 }
                 backlash = false;
             }
@@ -96,7 +117,7 @@ fn parse_command(input: String) -> Vec<String> {
     if curr.len() > 0 {
         command.push(curr);
     }
-    return command;
+    return (command, stdout_path);
 }
 
 fn exit_cmd(args: &[&str]) {
@@ -104,18 +125,18 @@ fn exit_cmd(args: &[&str]) {
     std::process::exit(code);
 }
 
-fn echo_cmd(args: &[&str]) {
+fn echo_cmd(args: &[&str], mut out: Box<dyn Write>) {
     for arg in args {
-        print!("{arg} ");
+        write!(out, "{arg} ").unwrap();
     }
-    println!("\u{8}");
+    writeln!(out).unwrap();
 }
 
-fn type_cmd(args: &[&str]) {
+fn type_cmd(args: &[&str], mut out: Box<dyn std::io::Write>) {
     let builtin = ["exit", "echo", "type", "pwd"];
     for builtin_command in builtin {
         if builtin_command == args[0] {
-            println!("{builtin_command} is a shell builtin");
+            writeln!(out, "{builtin_command} is a shell builtin").unwrap();
             return;
         }
     }
@@ -128,7 +149,7 @@ fn type_cmd(args: &[&str]) {
                     let path = entry.path().into_os_string().into_string().unwrap();
                     let file_name = entry.file_name().into_string().unwrap();
                     if file_name == args[0] {
-                        println!("{file_name} is {path}");
+                        writeln!(out, "{file_name} is {path}").unwrap();
                         return;
                     }
 
@@ -140,10 +161,10 @@ fn type_cmd(args: &[&str]) {
     println!("{}: not found", args[0]);
 }
 
-fn pwd_cmd() {
-    println!("{}",  env::current_dir()
+fn pwd_cmd(mut out: Box<dyn std::io::Write>) {
+    writeln!(out, "{}",  env::current_dir()
         .expect("error: maybe the current directory is deleted or you don't have sufficient persmissions")
-        .into_os_string().into_string().unwrap());
+        .into_os_string().into_string().unwrap()).unwrap();
 }
 
 fn cd_cmd(args: &[&str]) {
@@ -154,21 +175,18 @@ fn cd_cmd(args: &[&str]) {
     let mut path;
     if args.len() == 0 {
         path = "~".to_string();
-    }
-    else {
+    } else {
         path = args[0].to_string();
     }
     if path.starts_with('~') {
         path = path.replace('~', &env::var("HOME").unwrap());
-
     }
     if env::set_current_dir(&path).is_ok() == false {
         println!("cd: {}: No such file or directory", path);
     }
 }
 
-fn try_not_builtin_command(command: &str, args: &[&str]) {
-    
+fn try_not_builtin_command(command: &str, args: &[&str], mut out: Box<dyn std::io::Write>) {
     let paths = get_paths();
     for path in paths.iter() {
         match fs::read_dir(path) {
@@ -177,10 +195,13 @@ fn try_not_builtin_command(command: &str, args: &[&str]) {
                     let entry = entry.unwrap();
                     let exec_name = entry.file_name();
                     if exec_name == command {
-                        execute_external_program(&exec_name, args);
+                        let output = execute_external_program(&exec_name, args);
+                        write!(out, "{}", String::from_utf8(output.stdout).unwrap()).unwrap();
+                        out.flush().unwrap();
+                        print!("{}", String::from_utf8(output.stderr).unwrap());
+                        stdout().flush().unwrap();
                         return;
                     }
-
                 }
             },
             Err(_err) => ()
@@ -190,13 +211,13 @@ fn try_not_builtin_command(command: &str, args: &[&str]) {
     println!("{command}: command not found");
 }
 
-fn execute_external_program(executable_path: &OsStr, args: &[&str]) {
+fn execute_external_program(executable_path: &OsStr, args: &[&str]) -> Output {
     let output = Command::new(executable_path)
-      .args(args)
-      .stdout(Stdio::piped())
-      .output()
-      .expect("command failed");
-    stdout().write_all(&output.stdout).unwrap();
+        .args(args)
+        .stdout(Stdio::piped())
+        .output()
+        .expect("command failed");
+    return output;
 }
 
 fn get_paths() -> Vec<String> {
@@ -206,4 +227,18 @@ fn get_paths() -> Vec<String> {
         .map(|s| s.to_string())
         .collect::<Vec<String>>();
     return paths;
+}
+
+fn resolve_stdout(out_path: Option<&String>) -> io::Result<Box<dyn std::io::Write>> {
+    let out: Box<dyn Write>;
+    match out_path {
+        Some(path) => {
+            match File::create(path) {
+                Ok(handle) => {out = Box::new(handle);},
+                Err(err) => {return Err(err);}
+            }
+        }
+        None => out = Box::new(stdout()),
+    }
+    return Ok(out); 
 }
