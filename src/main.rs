@@ -1,7 +1,7 @@
 use std::ffi::OsStr;
 use std::fs::{self, File};
-use std::io::{self, stdout, Write};
-use std::process::{Command, Output, Stdio};
+use std::io::{self, stdout, Read, Write};
+use std::process::{Child, Command};
 use std::{env, str};
 
 fn main() {
@@ -195,11 +195,26 @@ fn try_not_builtin_command(command: &str, args: &[&str], mut out: Box<dyn std::i
                     let entry = entry.unwrap();
                     let exec_name = entry.file_name();
                     if exec_name == command {
-                        let output = execute_external_program(&exec_name, args);
-                        write!(out, "{}", String::from_utf8(output.stdout).unwrap()).unwrap();
-                        out.flush().unwrap();
-                        print!("{}", String::from_utf8(output.stderr).unwrap());
-                        stdout().flush().unwrap();
+                        let mut child = execute_external_program(&exec_name, args);
+                        loop {
+                            match child.try_wait() {
+                                Ok(Some(status)) => { 
+                                    println!("exited with status {}", status.code().unwrap());
+                                    continue;
+                                 },
+                                Ok(_) => {
+                                    let buf= &mut [0u8; 4096];
+                                    child.stdout.take().unwrap().read(buf).unwrap();
+                                    out.write_all(buf).unwrap();
+                                },
+                                Err(_) => println!("error while waiting for executable to finish")
+                            }
+                        }
+                        // println!("{}", output.status);
+                        // write!(out, "{}", String::from_utf8(output.stdout).unwrap()).unwrap();
+                        // out.flush().unwrap();
+                        // print!("{}", String::from_utf8(output.stderr).unwrap());
+                        // stdout().flush().unwrap();
                         return;
                     }
                 }
@@ -211,13 +226,12 @@ fn try_not_builtin_command(command: &str, args: &[&str], mut out: Box<dyn std::i
     println!("{command}: command not found");
 }
 
-fn execute_external_program(executable_path: &OsStr, args: &[&str]) -> Output {
-    let output = Command::new(executable_path)
+fn execute_external_program(executable_path: &OsStr, args: &[&str]) -> Child {
+    let child = Command::new(executable_path)
         .args(args)
-        .stdout(Stdio::piped())
-        .output()
-        .expect("command failed");
-    return output;
+        .spawn()
+        .unwrap();
+    return child;
 }
 
 fn get_paths() -> Vec<String> {
