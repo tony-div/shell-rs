@@ -1,6 +1,6 @@
 use std::ffi::OsStr;
 use std::fs::{self, File};
-use std::io::{self, stdout, Read, Write};
+use std::io::{self, Read, Write};
 use std::process::{Child, Command};
 use std::{env, str};
 
@@ -13,29 +13,37 @@ fn main() {
         stdout.flush().unwrap();
         let mut input = String::new();
         stdin.read_line(&mut input).unwrap();
-        let (command, stdout_path) = parse_command(input);
+        let (command, stdout_path, stderr_path) = parse_command(input);
         let command: Vec<&str> = command.iter().map(|x| &**x).collect();
-        let out = match resolve_stdout(stdout_path.as_ref()) {
+        let out_dest = match resolve_out(stdout_path.as_ref(), Box::new(io::stdout())) {
             Ok(handle) => handle,
             Err(_) => {
                 println!("{}: {}: No such file or directory", command[0], stdout_path.unwrap_or(String::new()));
                 continue;
             }
         };
+        let err_dest = match resolve_out(stderr_path.as_ref(), Box::new(io::stderr())) {
+            Ok(handle) => handle,
+            Err(_) => {
+                println!("{}: {}: No such file or directory", command[0], stderr_path.unwrap_or(String::new()));
+                continue;
+            }
+        };
+
         match command.as_slice() {
             [] => continue,
             [""] => continue,
             ["exit", args @ ..] => exit_cmd(args),
-            ["echo", args @ ..] => echo_cmd(args, out),
-            ["type", args @ ..] => type_cmd(args, out),
-            ["pwd"] => pwd_cmd(out),
+            ["echo", args @ ..] => echo_cmd(args, out_dest),
+            ["type", args @ ..] => type_cmd(args, out_dest, err_dest),
+            ["pwd"] => pwd_cmd(out_dest, err_dest),
             ["cd", args @ ..] => cd_cmd(args),
-            [command, args @ ..] => try_not_builtin_command(command, args, out),
+            [command, args @ ..] => try_not_builtin_command(command, args, out_dest, err_dest),
         }
     }
 }
 
-fn parse_command(input: String) -> (Vec<String>, Option<String>) {
+fn parse_command(input: String) -> (Vec<String>, Option<String>, Option<String>) {
     let input = input.trim().to_string();
     let mut command = vec![];
     let mut curr = String::new();
@@ -44,6 +52,8 @@ fn parse_command(input: String) -> (Vec<String>, Option<String>) {
     let mut backlash = false;
     let mut reading_stdout_path = false;
     let mut stdout_path: Option<String> = None;
+    let mut reading_stderr_path = false;
+    let mut stderr_path: Option<String> = None;
     for char in input.chars() {
         match char {
             ' ' => {
@@ -89,7 +99,8 @@ fn parse_command(input: String) -> (Vec<String>, Option<String>) {
                 }
             },
             '>' => {
-                reading_stdout_path = true;
+                reading_stdout_path = curr == "" || curr == "1";
+                reading_stderr_path = curr == "2";
                 curr.clear();
             },
             other => {
@@ -107,6 +118,15 @@ fn parse_command(input: String) -> (Vec<String>, Option<String>) {
                             stdout_path = Some(String::from(other));
                         }
                     }
+                } else if reading_stderr_path {
+                    match stderr_path {
+                        Some(ref mut path) => {
+                            path.push(other);
+                        },
+                        None => {
+                            stderr_path = Some(String::from(other));
+                        }
+                    }
                 } else {
                     curr.push(other);
                 }
@@ -117,7 +137,7 @@ fn parse_command(input: String) -> (Vec<String>, Option<String>) {
     if curr.len() > 0 {
         command.push(curr);
     }
-    return (command, stdout_path);
+    return (command, stdout_path, stderr_path);
 }
 
 fn exit_cmd(args: &[&str]) {
@@ -132,7 +152,7 @@ fn echo_cmd(args: &[&str], mut out: Box<dyn Write>) {
     writeln!(out).unwrap();
 }
 
-fn type_cmd(args: &[&str], mut out: Box<dyn std::io::Write>) {
+fn type_cmd(args: &[&str], mut out: Box<dyn std::io::Write>, mut err: Box<dyn std::io::Write>) {
     let builtin = ["exit", "echo", "type", "pwd"];
     for builtin_command in builtin {
         if builtin_command == args[0] {
@@ -155,16 +175,20 @@ fn type_cmd(args: &[&str], mut out: Box<dyn std::io::Write>) {
 
                 }
             },
-            Err(_err) => println!("there was a problem reading directory {} check if the directory exists and rash has valid permissions to read it", path)
+            Err(_err) => writeln!(err, "there was a problem reading directory {} check if the directory exists and rash has valid permissions to read it", path).unwrap(),
         }
     }
     println!("{}: not found", args[0]);
 }
 
-fn pwd_cmd(mut out: Box<dyn std::io::Write>) {
-    writeln!(out, "{}",  env::current_dir()
-        .expect("error: maybe the current directory is deleted or you don't have sufficient persmissions")
-        .into_os_string().into_string().unwrap()).unwrap();
+fn pwd_cmd(mut out: Box<dyn std::io::Write>, mut err: Box<dyn std::io::Write>) {
+    match env::current_dir() {
+        Ok(current_dir) => {
+            writeln!(out, "{}",  current_dir.into_os_string().into_string().unwrap()).unwrap();
+
+        },
+        Err(_) => writeln!(err, "error: maybe the current directory is deleted or you don't have sufficient persmissions").unwrap()
+    }
 }
 
 fn cd_cmd(args: &[&str]) {
@@ -186,7 +210,7 @@ fn cd_cmd(args: &[&str]) {
     }
 }
 
-fn try_not_builtin_command(command: &str, args: &[&str], mut out: Box<dyn std::io::Write>) {
+fn try_not_builtin_command(command: &str, args: &[&str], mut out: Box<dyn std::io::Write>, mut err: Box<dyn std::io::Write>) {
     let paths = get_paths();
     for path in paths.iter() {
         match fs::read_dir(path) {
@@ -197,6 +221,7 @@ fn try_not_builtin_command(command: &str, args: &[&str], mut out: Box<dyn std::i
                     if exec_name == command {
                         let mut child = execute_external_program(&exec_name, args);
                         let stdout_buf= &mut [0u8; 4096];
+                        let stderr_buf= &mut [0u8; 4096];
                         loop {
                             match child.try_wait() {
                                 Ok(Some(_status)) => { 
@@ -209,9 +234,16 @@ fn try_not_builtin_command(command: &str, args: &[&str], mut out: Box<dyn std::i
                                             out.write_all(stdout_buf).unwrap();
                                         },
                                         None => continue
+                                    };
+                                    match child.stderr {
+                                        Some(ref mut child_stderr) => {
+                                            child_stderr.read(stderr_buf).unwrap();
+                                            err.write_all(stderr_buf).unwrap();
+                                        },
+                                        None => continue
                                     }
                                 },
-                                Err(_) => println!("error while waiting for executable to finish")
+                                Err(_) => writeln!(err, "error while waiting for executable to finish").unwrap()
                             }
                         }
                         return;
@@ -242,7 +274,7 @@ fn get_paths() -> Vec<String> {
     return paths;
 }
 
-fn resolve_stdout(out_path: Option<&String>) -> io::Result<Box<dyn std::io::Write>> {
+fn resolve_out(out_path: Option<&String>, default: Box<dyn std::io::Write>) -> io::Result<Box<dyn std::io::Write>> {
     let out: Box<dyn Write>;
     match out_path {
         Some(path) => {
@@ -251,7 +283,7 @@ fn resolve_stdout(out_path: Option<&String>) -> io::Result<Box<dyn std::io::Writ
                 Err(err) => {return Err(err);}
             }
         }
-        None => out = Box::new(stdout()),
+        None => out = default,
     }
     return Ok(out); 
 }
