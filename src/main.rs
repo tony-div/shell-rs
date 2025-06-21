@@ -13,7 +13,7 @@ fn main() {
         stdout.flush().unwrap();
         let mut input = String::new();
         stdin.read_line(&mut input).unwrap();
-        let (command, stdout_path, stderr_path, append_stdout) = parse_command(input);
+        let (command, stdout_path, stderr_path, append_stdout, append_stderr) = parse_command(input);
         let command: Vec<&str> = command.iter().map(|x| &**x).collect();
         let out_dest = match resolve_out(stdout_path.as_ref(), append_stdout) {
             Some(file) => {
@@ -29,7 +29,7 @@ fn main() {
             None => None
         };
 
-        let err_dest = match resolve_out(stderr_path.as_ref(), append_stdout) {
+        let err_dest = match resolve_out(stderr_path.as_ref(), append_stderr) {
             Some(file) => {
                 match file {
                     Ok(handle) => Some(handle),
@@ -56,7 +56,7 @@ fn main() {
     }
 }
 
-fn parse_command(input: String) -> (Vec<String>, Option<String>, Option<String>, bool) {
+fn parse_command(input: String) -> (Vec<String>, Option<String>, Option<String>, bool, bool) {
     let input = input.trim().to_string();
     let mut command = vec![];
     let mut curr = String::new();
@@ -68,6 +68,7 @@ fn parse_command(input: String) -> (Vec<String>, Option<String>, Option<String>,
     let mut reading_stderr_path = false;
     let mut stderr_path: Option<String> = None;
     let mut append_stdout = false;
+    let mut append_stderr = false;
     for char in input.chars() {
         match char {
             ' ' => {
@@ -113,7 +114,7 @@ fn parse_command(input: String) -> (Vec<String>, Option<String>, Option<String>,
                 }
             },
             '>' => {
-                if reading_stdout_path == false {
+                if reading_stdout_path == false && reading_stderr_path == false {
                     reading_stdout_path = curr == "" || curr == "1" || curr == "1>" || curr == ">";
                 } else {
                     append_stdout = true;
@@ -121,6 +122,8 @@ fn parse_command(input: String) -> (Vec<String>, Option<String>, Option<String>,
 
                 if reading_stderr_path == false {
                     reading_stderr_path = curr == "2";
+                } else {
+                    append_stderr = true;
                 }
 
                 curr.clear();
@@ -159,7 +162,7 @@ fn parse_command(input: String) -> (Vec<String>, Option<String>, Option<String>,
     if curr.len() > 0 {
         command.push(curr);
     }
-    return (command, stdout_path, stderr_path, append_stdout);
+    return (command, stdout_path, stderr_path, append_stdout, append_stderr);
 }
 
 fn exit_cmd(args: &[&str]) {
